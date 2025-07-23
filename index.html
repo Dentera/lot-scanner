@@ -1,82 +1,86 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>📷 LOT Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.9/html5-qrcode.min.js"></script>
   <style>
-    video {
-      width: 90%;
-      max-width: 500px;
-      border: 2px solid #444;
-      border-radius: 10px;
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
     }
-    #output {
-      font-size: 18px;
-      color: green;
-      margin-top: 10px;
+    #reader {
+      width: 300px;
+      margin: auto;
     }
-    button {
-      margin-top: 10px;
-      padding: 8px 16px;
+    #result {
+      margin-top: 15px;
       font-size: 16px;
+      color: green;
     }
   </style>
 </head>
 <body>
-  <h2>📷 LOT Scanner</h2>
-  <video id="video" autoplay></video><br>
-  <button id="start">📡 Kamerayı Başlat</button>
-  <p id="output">📄 Barkod bekleniyor...</p>
+  <h1>📷 LOT Scanner</h1>
+  <div id="reader"></div>
+  <div id="result">🔄 Kamerayı başlat...</div>
 
-  <script src="https://unpkg.com/@zxing/browser@latest"></script>
   <script>
-    const startButton = document.getElementById('start');
-    const videoElement = document.getElementById('video');
-    const output = document.getElementById('output');
+    const resultDiv = document.getElementById("result");
 
-    let selectedDeviceId;
-    let codeReader;
+    function parseGS1(barcode) {
+      let gtin = "";
+      let lot = "";
+      let skt = "";
 
-    async function initScanner() {
-      output.innerText = "📡 Kamera başlatılıyor...";
-      try {
-        const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-        selectedDeviceId = devices.find(device => device.label.toLowerCase().includes('back'))?.deviceId || devices[0]?.deviceId;
+      const gtinMatch = barcode.match(/\(01\)(\d{14})/);
+      const lotMatch = barcode.match(/\(10\)([^\(]+)/);
+      const sktMatch = barcode.match(/\(17\)(\d{6})/);
 
-        if (!selectedDeviceId) {
-          output.innerText = "❌ Uygun kamera bulunamadı.";
-          return;
-        }
-
-        codeReader = new ZXing.BrowserMultiFormatReader();
-        codeReader.decodeFromVideoDevice(selectedDeviceId, videoElement, (result, err) => {
-          if (result) {
-            const barkod = result.getText();
-            output.innerHTML = `✅ Barkod: <br><b>${barkod}</b>`;
-            sendToSheet(barkod);
-            codeReader.reset(); // Tek seferlik okuma
-          }
-        });
-      } catch (err) {
-        output.innerText = "❌ Kamera açılamadı: " + err;
+      if (gtinMatch) gtin = gtinMatch[1];
+      if (lotMatch) lot = lotMatch[1];
+      if (sktMatch) {
+        const y = sktMatch[1].substring(0, 2);
+        const m = sktMatch[1].substring(2, 4);
+        const d = sktMatch[1].substring(4, 6);
+        skt = `20${y}-${m}-${d}`;
       }
+
+      return { gtin, lot, skt };
     }
 
-    async function sendToSheet(barcode) {
-      try {
-        await fetch("https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec", {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: "barkod=" + encodeURIComponent(barcode)
-        });
-        output.innerHTML += "<br>📤 Google Sheets'e gönderildi.";
-      } catch (e) {
-        output.innerHTML += "<br>❌ Sheets'e gönderme hatası.";
-      }
+    function onScanSuccess(decodedText, decodedResult) {
+      const { gtin, lot, skt } = parseGS1(decodedText);
+      resultDiv.innerHTML = `
+        ✅ <strong>Barkod:</strong> ${decodedText}<br/>
+        🔢 GTIN: ${gtin}<br/>
+        📦 LOT: ${lot}<br/>
+        ⏳ SKT: ${skt}
+      `;
+
+      // Google Apps Script'e gönder (Google Sheet)
+      fetch("https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec", {
+        method: "POST",
+        mode: "no-cors",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ barcode: decodedText }),
+      });
     }
 
-    startButton.addEventListener("click", initScanner);
+    function onScanError(errorMessage) {
+      console.warn(errorMessage);
+    }
+
+    new Html5Qrcode("reader").start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      onScanSuccess,
+      onScanError
+    );
   </script>
 </body>
 </html>
