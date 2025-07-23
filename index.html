@@ -1,105 +1,82 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>📷 LOT Scanner</title>
-  <script type="module">
-    import { BrowserMultiFormatReader } from "https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm";
-
-    const codeReader = new BrowserMultiFormatReader();
-    const videoElement = document.getElementById('video');
-    const resultDiv = document.getElementById('result');
-    const button = document.getElementById('startButton');
-
-    const scriptURL = "https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec";
-
-    button.addEventListener('click', () => {
-      resultDiv.innerHTML = "📷 Kamera başlatılıyor...";
-
-      codeReader
-        .listVideoInputDevices()
-        .then((videoInputDevices) => {
-          const backCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back')) || videoInputDevices[0];
-
-          codeReader.decodeFromVideoDevice(backCamera.deviceId, videoElement, (result, err) => {
-            if (result) {
-              const raw = result.getText();
-              resultDiv.innerHTML = `✅ Barkod:<br><strong>${raw}</strong>`;
-              videoElement.srcObject?.getTracks().forEach(track => track.stop());
-
-              const parsed = parseGS1(raw);
-              sendToSheet(parsed.gtin, parsed.skt, parsed.lot);
-            }
-          });
-        })
-        .catch((err) => {
-          resultDiv.innerHTML = `❌ Kamera açılamadı: ${err}`;
-        });
-    });
-
-    function parseGS1(data) {
-      const gtinMatch = data.match(/01(\d{14})/);
-      const sktMatch = data.match(/17(\d{6})/);
-      const lotMatch = data.match(/10([^\s\>]+)/);
-
-      const gtin = gtinMatch ? gtinMatch[1] : "";
-      let skt = "";
-      if (sktMatch) {
-        const y = sktMatch[1].substring(0, 2);
-        const m = sktMatch[1].substring(2, 4);
-        const d = sktMatch[1].substring(4, 6);
-        skt = `20${y}-${m}-${d}`;
-      }
-      const lot = lotMatch ? lotMatch[1].trim() : "";
-
-      return { gtin, skt, lot };
-    }
-
-    function sendToSheet(gtin, skt, lot) {
-      fetch(scriptURL, {
-        method: "POST",
-        body: new URLSearchParams({ gtin, skt, lot }),
-      })
-        .then((response) => {
-          if (response.ok) {
-            resultDiv.innerHTML += `<br>✅ Google Sheet'e gönderildi.`;
-          } else {
-            resultDiv.innerHTML += `<br>❌ Google Sheet'e gönderilemedi.`;
-          }
-        })
-        .catch((error) => {
-          resultDiv.innerHTML += `<br>❌ Hata: ${error}`;
-        });
-    }
-  </script>
   <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      padding: 20px;
-    }
     video {
       width: 90%;
-      max-width: 400px;
-      border: 2px solid #333;
+      max-width: 500px;
+      border: 2px solid #444;
       border-radius: 10px;
     }
-    #startButton {
-      margin-top: 15px;
-      padding: 10px 20px;
+    #output {
       font-size: 18px;
+      color: green;
+      margin-top: 10px;
     }
-    #result {
-      margin-top: 15px;
+    button {
+      margin-top: 10px;
+      padding: 8px 16px;
       font-size: 16px;
     }
   </style>
 </head>
 <body>
-  <h1>📷 LOT Scanner</h1>
-  <video id="video" muted autoplay></video>
-  <br>
-  <button id="startButton">📡 Kamerayı Başlat</button>
-  <div id="result"></div>
+  <h2>📷 LOT Scanner</h2>
+  <video id="video" autoplay></video><br>
+  <button id="start">📡 Kamerayı Başlat</button>
+  <p id="output">📄 Barkod bekleniyor...</p>
+
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
+  <script>
+    const startButton = document.getElementById('start');
+    const videoElement = document.getElementById('video');
+    const output = document.getElementById('output');
+
+    let selectedDeviceId;
+    let codeReader;
+
+    async function initScanner() {
+      output.innerText = "📡 Kamera başlatılıyor...";
+      try {
+        const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+        selectedDeviceId = devices.find(device => device.label.toLowerCase().includes('back'))?.deviceId || devices[0]?.deviceId;
+
+        if (!selectedDeviceId) {
+          output.innerText = "❌ Uygun kamera bulunamadı.";
+          return;
+        }
+
+        codeReader = new ZXing.BrowserMultiFormatReader();
+        codeReader.decodeFromVideoDevice(selectedDeviceId, videoElement, (result, err) => {
+          if (result) {
+            const barkod = result.getText();
+            output.innerHTML = `✅ Barkod: <br><b>${barkod}</b>`;
+            sendToSheet(barkod);
+            codeReader.reset(); // Tek seferlik okuma
+          }
+        });
+      } catch (err) {
+        output.innerText = "❌ Kamera açılamadı: " + err;
+      }
+    }
+
+    async function sendToSheet(barcode) {
+      try {
+        await fetch("https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec", {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: "barkod=" + encodeURIComponent(barcode)
+        });
+        output.innerHTML += "<br>📤 Google Sheets'e gönderildi.";
+      } catch (e) {
+        output.innerHTML += "<br>❌ Sheets'e gönderme hatası.";
+      }
+    }
+
+    startButton.addEventListener("click", initScanner);
+  </script>
 </body>
 </html>
