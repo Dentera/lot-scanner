@@ -1,0 +1,98 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>LOT Scanner (GS1 + HIBC)</title>
+  <script src="https://unpkg.com/@zxing/browser@latest"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      margin-top: 20px;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 1.1em;
+    }
+  </style>
+</head>
+<body>
+  <h1>LOT Scanner</h1>
+  <button onclick="startScanner()">📷 Kamerayı Başlat</button>
+  <div id="result"></div>
+  <video id="video" autoplay></video>
+
+  <script>
+    let selectedDeviceId;
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const videoElement = document.getElementById('video');
+    const resultDiv = document.getElementById('result');
+
+    const scriptURL = "https://script.google.com/macros/s/AKfycbxMC_EPnTzKG7n4pKUU-RQm9P2LOfji2uGQT1LgIHtJjrO9yAQCgHa7Sn3_pQExTKOpNQ/exec";
+
+    function parseBarcode(barcode) {
+      const data = { gtin: "", skt: "", lot: "" };
+
+      const gtinMatch = barcode.match(/01(\d{14})/);
+      const lotMatch = barcode.match(/10([^\x1D]+)/);
+      const sktMatch = barcode.match(/17(\d{6})/);
+
+      if (gtinMatch) data.gtin = gtinMatch[1];
+      if (lotMatch) data.lot = lotMatch[1];
+      if (sktMatch) {
+        const raw = sktMatch[1];
+        data.skt = `20${raw.slice(0,2)}-${raw.slice(2,4)}-${raw.slice(4,6)}`;
+      }
+
+      return data;
+    }
+
+    function sendToSheet(data) {
+      const url = `${scriptURL}?gtin=${data.gtin}&skt=${data.skt}&lot=${data.lot}`;
+      fetch(url)
+        .then(response => response.text())
+        .then(result => {
+          if (result === "OK") {
+            resultDiv.innerHTML += "<br>✅ Veri gönderildi.";
+          } else {
+            resultDiv.innerHTML += "<br>❌ Veri gönderilemedi: " + result;
+          }
+        })
+        .catch(error => {
+          resultDiv.innerHTML += "<br>❌ Bağlantı hatası: " + error;
+        });
+    }
+
+    function startScanner() {
+      resultDiv.innerHTML = "📸 Kamera başlatılıyor...";
+
+      codeReader
+        .listVideoInputDevices()
+        .then(videoInputDevices => {
+          selectedDeviceId = videoInputDevices.length > 1
+            ? videoInputDevices[1].deviceId
+            : videoInputDevices[0].deviceId;
+
+          codeReader.decodeFromVideoDevice(selectedDeviceId, videoElement, (result, err) => {
+            if (result) {
+              codeReader.reset();
+              const barcode = result.getText();
+              const parsed = parseBarcode(barcode);
+              resultDiv.innerHTML = `<b>Barkod:</b> ${barcode}<br><b>GTIN:</b> ${parsed.gtin}<br><b>LOT:</b> ${parsed.lot}<br><b>SKT:</b> ${parsed.skt}`;
+              sendToSheet(parsed);
+            }
+          });
+        })
+        .catch(err => {
+          resultDiv.innerHTML = "❌ Kamera başlatılamadı: " + err;
+        });
+    }
+  </script>
+</body>
+</html>
