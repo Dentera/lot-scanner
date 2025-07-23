@@ -29,8 +29,8 @@
       const codeReader = new ZXing.BrowserMultiFormatReader();
 
       try {
-        const videoInputDevices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-        const selectedDeviceId = videoInputDevices[0]?.deviceId;
+        const devices = await codeReader.getVideoInputDevices();
+        const selectedDeviceId = devices[0]?.deviceId;
 
         if (!selectedDeviceId) throw new Error("Kamera bulunamadı");
 
@@ -45,7 +45,7 @@
           }
         });
       } catch (e) {
-        resultElement.innerHTML = "❌ Kamera açılamadı: " + e;
+        resultElement.innerHTML = "❌ Kamera açılamadı: " + e.message;
       }
     });
 
