@@ -1,28 +1,105 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>📷 LOT Scanner</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-    #video { width: 90%; max-width: 400px; border: 2px solid #333; border-radius: 10px; }
-    #startButton { padding: 10px 20px; font-size: 16px; margin-top: 10px; border-radius: 12px; }
-    #output { margin-top: 20px; font-size: 18px; color: green; }
-    #error { color: red; margin-top: 15px; font-weight: bold; }
-  </style>
-
   <script type="module">
-    import * as ZXing from "https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm";
-    window.ZXingBrowser = ZXing;
+    import { BrowserMultiFormatReader } from "https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm";
+
+    const codeReader = new BrowserMultiFormatReader();
+    const videoElement = document.getElementById('video');
+    const resultDiv = document.getElementById('result');
+    const button = document.getElementById('startButton');
+
+    const scriptURL = "https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec";
+
+    button.addEventListener('click', () => {
+      resultDiv.innerHTML = "📷 Kamera başlatılıyor...";
+
+      codeReader
+        .listVideoInputDevices()
+        .then((videoInputDevices) => {
+          const backCamera = videoInputDevices.find(device => device.label.toLowerCase().includes('back')) || videoInputDevices[0];
+
+          codeReader.decodeFromVideoDevice(backCamera.deviceId, videoElement, (result, err) => {
+            if (result) {
+              const raw = result.getText();
+              resultDiv.innerHTML = `✅ Barkod:<br><strong>${raw}</strong>`;
+              videoElement.srcObject?.getTracks().forEach(track => track.stop());
+
+              const parsed = parseGS1(raw);
+              sendToSheet(parsed.gtin, parsed.skt, parsed.lot);
+            }
+          });
+        })
+        .catch((err) => {
+          resultDiv.innerHTML = `❌ Kamera açılamadı: ${err}`;
+        });
+    });
+
+    function parseGS1(data) {
+      const gtinMatch = data.match(/01(\d{14})/);
+      const sktMatch = data.match(/17(\d{6})/);
+      const lotMatch = data.match(/10([^\s\>]+)/);
+
+      const gtin = gtinMatch ? gtinMatch[1] : "";
+      let skt = "";
+      if (sktMatch) {
+        const y = sktMatch[1].substring(0, 2);
+        const m = sktMatch[1].substring(2, 4);
+        const d = sktMatch[1].substring(4, 6);
+        skt = `20${y}-${m}-${d}`;
+      }
+      const lot = lotMatch ? lotMatch[1].trim() : "";
+
+      return { gtin, skt, lot };
+    }
+
+    function sendToSheet(gtin, skt, lot) {
+      fetch(scriptURL, {
+        method: "POST",
+        body: new URLSearchParams({ gtin, skt, lot }),
+      })
+        .then((response) => {
+          if (response.ok) {
+            resultDiv.innerHTML += `<br>✅ Google Sheet'e gönderildi.`;
+          } else {
+            resultDiv.innerHTML += `<br>❌ Google Sheet'e gönderilemedi.`;
+          }
+        })
+        .catch((error) => {
+          resultDiv.innerHTML += `<br>❌ Hata: ${error}`;
+        });
+    }
   </script>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    video {
+      width: 90%;
+      max-width: 400px;
+      border: 2px solid #333;
+      border-radius: 10px;
+    }
+    #startButton {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 18px;
+    }
+    #result {
+      margin-top: 15px;
+      font-size: 16px;
+    }
+  </style>
 </head>
 <body>
-  <h1>📷 <b>LOT Scanner</b></h1>
-  <video id="video" autoplay muted playsinline></video><br>
+  <h1>📷 LOT Scanner</h1>
+  <video id="video" muted autoplay></video>
+  <br>
   <button id="startButton">📡 Kamerayı Başlat</button>
-  <div id="output"></div>
-  <div id="error"></div>
-  <script src="script.js"></script>
+  <div id="result"></div>
 </body>
 </html>
