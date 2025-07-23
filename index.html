@@ -2,85 +2,99 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>📷 LOT Scanner</title>
-<script src="https://unpkg.com/@zxing/library@0.18.6"></script>
+  <script src="https://unpkg.com/@zxing/library@0.18.6"></script>
   <style>
     body {
       font-family: sans-serif;
       text-align: center;
       padding: 20px;
     }
-    #reader {
-      width: 300px;
-      margin: auto;
+    video {
+      width: 90%;
+      max-width: 400px;
+      height: auto;
+      border: 3px solid #333;
+      border-radius: 10px;
+      margin-bottom: 10px;
     }
     #result {
       margin-top: 15px;
-      font-size: 16px;
+      font-size: 18px;
       color: green;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
   <h1>📷 LOT Scanner</h1>
-  <div id="reader"></div>
-  <div id="result">🔄 Kamerayı başlat...</div>
+  <video id="video" muted autoplay></video><br />
+  <button id="startButton">🎥 Kamerayı Başlat</button>
+  <div id="result"></div>
 
   <script>
-    const resultDiv = document.getElementById("result");
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const videoElement = document.getElementById('video');
+    const resultDiv = document.getElementById('result');
+    const button = document.getElementById('startButton');
 
-    function parseGS1(barcode) {
-      let gtin = "";
-      let lot = "";
-      let skt = "";
+    let scanning = false;
 
-      const gtinMatch = barcode.match(/\(01\)(\d{14})/);
-      const lotMatch = barcode.match(/\(10\)([^\(]+)/);
-      const sktMatch = barcode.match(/\(17\)(\d{6})/);
+    async function startScanner() {
+      try {
+        const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+        if (devices.length === 0) {
+          resultDiv.innerHTML = '❌ Kamera bulunamadı.';
+          return;
+        }
 
-      if (gtinMatch) gtin = gtinMatch[1];
-      if (lotMatch) lot = lotMatch[1];
-      if (sktMatch) {
-        const y = sktMatch[1].substring(0, 2);
-        const m = sktMatch[1].substring(2, 4);
-        const d = sktMatch[1].substring(4, 6);
-        skt = `20${y}-${m}-${d}`;
+        const selectedDeviceId = devices[0].deviceId;
+
+        codeReader.decodeFromVideoDevice(selectedDeviceId, 'video', (result, err) => {
+          if (result && !scanning) {
+            scanning = true;
+            const raw = result.getText();
+            resultDiv.innerHTML = `✅ Barkod: <br>${raw}`;
+            sendToGoogleSheet(raw);
+            setTimeout(() => {
+              resultDiv.innerHTML += "<br>🔄 Yeniden taramak için sayfayı yenileyin.";
+              codeReader.reset();
+            }, 4000);
+          }
+        });
+
+      } catch (e) {
+        console.error(e);
+        resultDiv.innerHTML = '❌ Kamera başlatılamadı.';
       }
-
-      return { gtin, lot, skt };
     }
 
-    function onScanSuccess(decodedText, decodedResult) {
-      const { gtin, lot, skt } = parseGS1(decodedText);
-      resultDiv.innerHTML = `
-        ✅ <strong>Barkod:</strong> ${decodedText}<br/>
-        🔢 GTIN: ${gtin}<br/>
-        📦 LOT: ${lot}<br/>
-        ⏳ SKT: ${skt}
-      `;
-
-      // Google Apps Script'e gönder (Google Sheet)
+    function sendToGoogleSheet(data) {
       fetch("https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec", {
         method: "POST",
-        mode: "no-cors",
+        body: JSON.stringify({ barkod: data }),
         headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ barcode: decodedText }),
-      });
+          "Content-Type": "application/json"
+        }
+      }).then(res => res.text())
+        .then(msg => {
+          resultDiv.innerHTML += "<br>📤 Google Sheets'e gönderildi.";
+        }).catch(err => {
+          resultDiv.innerHTML += "<br>⚠️ Sheets gönderim hatası.";
+        });
     }
 
-    function onScanError(errorMessage) {
-      console.warn(errorMessage);
-    }
-
-    new Html5Qrcode("reader").start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
-      onScanSuccess,
-      onScanError
-    );
+    button.addEventListener('click', () => {
+      button.disabled = true;
+      button.innerText = "📷 Kamera başlatılıyor...";
+      startScanner();
+    });
   </script>
 </body>
 </html>
