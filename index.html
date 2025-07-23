@@ -3,68 +3,70 @@
 <head>
   <meta charset="UTF-8">
   <title>📷 LOT Scanner</title>
-  <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
     body { font-family: sans-serif; text-align: center; padding: 20px; }
-    video { width: 90%; max-width: 400px; border: 3px solid #000; border-radius: 8px; }
-    button { padding: 10px 20px; font-size: 16px; margin-top: 10px; }
-    #result { margin-top: 15px; font-size: 16px; color: green; }
+    video { width: 90%; max-width: 400px; border: 2px solid black; margin: 10px auto; display: block; }
+    button { padding: 10px 20px; font-size: 16px; }
+    #result { margin-top: 10px; font-size: 16px; }
   </style>
 </head>
 <body>
   <h1>📷 LOT Scanner</h1>
-  <video id="video" muted autoplay></video><br>
-  <button id="startButton">📡 Kamerayı Başlat</button>
+  <video id="video" muted autoplay></video>
+  <button id="startButton">🔄 Kamerayı Başlat</button>
   <div id="result"></div>
 
   <script>
-    const videoElement = document.getElementById('video');
-    const startButton = document.getElementById('startButton');
-    const resultElement = document.getElementById('result');
+    const videoElement = document.getElementById("video");
+    const startButton = document.getElementById("startButton");
+    const resultElement = document.getElementById("result");
     let scanning = false;
 
-    startButton.addEventListener('click', async () => {
+    const sheetURL = "https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec";
+
+    function parseGS1(data) {
+      let gtin = "", skt = "", lot = "";
+      const gtinMatch = data.match(/01(\d{14})/);
+      const sktMatch = data.match(/17(\d{6})/);
+      const lotMatch = data.match(/10([^\s\x1D]+)/);
+
+      if (gtinMatch) gtin = gtinMatch[1];
+      if (sktMatch) {
+        const y = sktMatch[1].substring(0,2);
+        const m = sktMatch[1].substring(2,4);
+        const d = sktMatch[1].substring(4,6);
+        skt = `20${y}-${m}-${d}`;
+      }
+      if (lotMatch) lot = lotMatch[1];
+
+      return { gtin, skt, lot };
+    }
+
+    function sendToSheet(rawData) {
+      const parsed = parseGS1(rawData);
+      const url = `${sheetURL}?gtin=${parsed.gtin}&skt=${parsed.skt}&lot=${parsed.lot}`;
+      fetch(url)
+        .then(res => resultElement.innerHTML += "<br>📤 Google Sheets'e gönderildi.")
+        .catch(err => resultElement.innerHTML += "<br>❌ Veri gönderilemedi.");
+    }
+
+    startButton.addEventListener("click", () => {
       if (scanning) return;
-      resultElement.textContent = "📡 Kamera başlatılıyor...";
+      resultElement.innerHTML = "🎥 Kamera başlatılıyor...";
       const codeReader = new ZXing.BrowserMultiFormatReader();
 
-      try {
-        const devices = await codeReader.getVideoInputDevices();
-        const selectedDeviceId = devices[0]?.deviceId;
-
-        if (!selectedDeviceId) throw new Error("Kamera bulunamadı");
-
-        await codeReader.decodeFromVideoDevice(selectedDeviceId, videoElement, (result, err) => {
-          if (result) {
-            scanning = true;
-            const rawData = result.getText();
-            resultElement.innerHTML = "✅ Barkod:<br><b>" + rawData + "</b>";
-            videoElement.srcObject?.getTracks().forEach(track => track.stop());
-            codeReader.reset();
-            sendToSheet(rawData);
-          }
-        });
-      } catch (e) {
-        resultElement.innerHTML = "❌ Kamera açılamadı: " + e.message;
-      }
-    });
-
-    function sendToSheet(raw) {
-      fetch("https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec", {
-        method: "POST",
-        body: JSON.stringify({ barcode: raw }),
-        headers: {
-          "Content-Type": "application/json"
+      codeReader.decodeFromVideoDevice(null, videoElement, (result, err) => {
+        if (result) {
+          scanning = true;
+          const rawData = result.getText();
+          resultElement.innerHTML = "✅ Barkod:<br><b>" + rawData + "</b>";
+          videoElement.srcObject?.getTracks().forEach(track => track.stop());
+          codeReader.reset();
+          sendToSheet(rawData);
         }
-      })
-      .then(res => res.text())
-      .then(data => {
-        resultElement.innerHTML += "<br>📤 Google Sheet'e gönderildi.";
-      })
-      .catch(err => {
-        resultElement.innerHTML += "<br>❌ Google Sheet'e gönderilemedi: " + err;
       });
-    }
+    });
   </script>
 </body>
 </html>
