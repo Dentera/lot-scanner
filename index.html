@@ -2,113 +2,27 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <title>LOT Scanner (GS1 + HIBC)</title>
+  <title>📷 LOT Scanner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- ZXing tarayıcı destekli sürüm -->
-  <script src="https://unpkg.com/@zxing/browser@latest"></script>
-
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      text-align: center;
-    }
-    video {
-      width: 100%;
-      max-width: 400px;
-      border: 2px solid #333;
-      border-radius: 8px;
-      margin-top: 10px;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      margin-top: 10px;
-    }
-    #result {
-      margin-top: 20px;
-      font-size: 16px;
-      white-space: pre-wrap;
-      color: green;
-    }
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    #video { width: 90%; max-width: 400px; border: 2px solid #333; border-radius: 10px; }
+    #startButton { padding: 10px 20px; font-size: 16px; margin-top: 10px; border-radius: 12px; }
+    #output { margin-top: 20px; font-size: 18px; color: green; }
+    #error { color: red; margin-top: 15px; font-weight: bold; }
   </style>
+
+  <script type="module">
+    import * as ZXing from "https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm";
+    window.ZXingBrowser = ZXing;
+  </script>
 </head>
 <body>
-  <h2>📷 LOT Scanner</h2>
-
-  <video id="video" autoplay></video><br>
-  <button onclick="startScanner()">📡 Kamerayı Başlat</button>
-
-  <div id="result"></div>
-
-  <script>
-    let selectedDeviceId;
-    let codeReader;
-
-    async function startScanner() {
-      const videoElement = document.getElementById('video');
-      const resultDiv = document.getElementById('result');
-
-      try {
-        const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
-        selectedDeviceId = devices[devices.length - 1].deviceId; // genelde arka kamera
-
-        codeReader = new ZXing.BrowserMultiFormatReader();
-
-        await codeReader.decodeFromVideoDevice(selectedDeviceId, videoElement, (result, err) => {
-          if (result) {
-            const raw = result.getText();
-            const parsed = parseBarcode(raw);
-            resultDiv.innerText = `📦 Kod: ${raw}\n🔍 LOT: ${parsed.lot}\n📅 SKT: ${parsed.exp}`;
-
-            sendToGoogleSheets(parsed.lot, parsed.exp, raw);
-
-            codeReader.reset(); // tekrar okutmak için durdur
-          }
-        });
-      } catch (e) {
-        resultDiv.innerText = `❌ Kamera açılamadı: ${e}`;
-      }
-    }
-
-    function parseBarcode(data) {
-      const ai = (code, len) => {
-        const i = data.indexOf(code);
-        return i >= 0 ? data.substring(i + code.length, i + code.length + len) : '';
-      };
-
-      let lot = ai('(10)', 20).split(/[^a-zA-Z0-9]/)[0]; // LOT max 20 karakter
-      let expRaw = ai('(17)', 6);
-      let exp = expRaw ? `20${expRaw.substring(0, 2)}-${expRaw.substring(2, 4)}-${expRaw.substring(4, 6)}` : '';
-
-      if (!lot) {
-        // HIBC etiketi destekleme (örnek: $$+E22110131/$S327030124432134*)
-        const hibcMatch = data.match(/\$S\d+([A-Z0-9]+)/);
-        if (hibcMatch) lot = hibcMatch[1];
-      }
-
-      return { lot, exp };
-    }
-
-    function sendToGoogleSheets(lot, exp, raw) {
-      const url = "https://script.google.com/macros/s/AKfycbzNwkwbTTj7A7eaYXTLdsDFp4Kleht5apP9MKK5kAo10L2LdyxVz3llWVGRe2SK1Isv/exec";
-
-      fetch(url, {
-        method: "POST",
-        body: JSON.stringify({
-          lot_number: lot,
-          expiration_date: exp,
-          raw_code: raw
-        }),
-        headers: {
-          "Content-Type": "application/json"
-        }
-      })
-      .then(res => res.text())
-      .then(msg => console.log("Sheet'e gönderildi:", msg))
-      .catch(err => console.error("Gönderim hatası:", err));
-    }
-  </script>
+  <h1>📷 <b>LOT Scanner</b></h1>
+  <video id="video" autoplay muted playsinline></video><br>
+  <button id="startButton">📡 Kamerayı Başlat</button>
+  <div id="output"></div>
+  <div id="error"></div>
+  <script src="script.js"></script>
 </body>
 </html>
