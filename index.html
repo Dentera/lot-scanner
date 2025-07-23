@@ -1,72 +1,83 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>📷 LOT Scanner</title>
-  <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; }
-    video { width: 90%; max-width: 400px; border: 2px solid black; margin: 10px auto; display: block; }
-    button { padding: 10px 20px; font-size: 16px; }
-    #result { margin-top: 10px; font-size: 16px; }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 30px;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      border: 2px solid black;
+      border-radius: 8px;
+    }
+    #result {
+      margin-top: 15px;
+      font-size: 18px;
+    }
+    .error { color: red; }
+    .success { color: green; }
   </style>
 </head>
 <body>
   <h1>📷 LOT Scanner</h1>
   <video id="video" muted autoplay></video>
-  <button id="startButton">🔄 Kamerayı Başlat</button>
+  <br />
+  <button id="startButton">📷 Kamerayı Başlat</button>
   <div id="result"></div>
 
-  <script>
-    const videoElement = document.getElementById("video");
-    const startButton = document.getElementById("startButton");
-    const resultElement = document.getElementById("result");
-    let scanning = false;
+  <script type="module">
+    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
 
-    const sheetURL = "https://script.google.com/macros/s/AKfycbxTe2DjepcMKZZoFCrjZFC3iihHfyB9RrbH9sv38xsKw8hmOzwx4FmdkqjYb8MfjFg/exec";
+    const videoElement = document.getElementById('video');
+    const startButton = document.getElementById('startButton');
+    const resultDiv = document.getElementById('result');
+    const codeReader = new BrowserMultiFormatReader();
 
-    function parseGS1(data) {
-      let gtin = "", skt = "", lot = "";
-      const gtinMatch = data.match(/01(\d{14})/);
-      const sktMatch = data.match(/17(\d{6})/);
-      const lotMatch = data.match(/10([^\s\x1D]+)/);
+    const scriptURL = "https://script.google.com/macros/s/AKfycbxPqvHH3gzf21KbnmZ1OdQQCkP4OrJJtweDqDgeRo5xVt9PkNDg--WteiHLR-toNjjGig/exec";
 
-      if (gtinMatch) gtin = gtinMatch[1];
-      if (sktMatch) {
-        const y = sktMatch[1].substring(0,2);
-        const m = sktMatch[1].substring(2,4);
-        const d = sktMatch[1].substring(4,6);
-        skt = `20${y}-${m}-${d}`;
-      }
-      if (lotMatch) lot = lotMatch[1];
+    startButton.onclick = () => {
+      resultDiv.innerHTML = "📷 Kamera başlatılıyor...";
+      codeReader.decodeOnceFromVideoDevice(undefined, 'video')
+        .then(result => {
+          const raw = result.text;
+          resultDiv.innerHTML = `<span class="success">✅ Barkod:<br>${raw}</span>`;
+          
+          const gtin = (raw.match(/01(\d{14})/) || [])[1] || "";
+          const sktRaw = (raw.match(/17(\d{6})/) || [])[1] || "";
+          const lot = (raw.match(/10([^\s]+)/) || [])[1] || "";
 
-      return { gtin, skt, lot };
-    }
+          let skt = "";
+          if (sktRaw.length === 6) {
+            const yy = sktRaw.slice(0, 2);
+            const mm = sktRaw.slice(2, 4);
+            const dd = sktRaw.slice(4, 6);
+            skt = `20${yy}-${mm}-${dd}`;
+          }
 
-    function sendToSheet(rawData) {
-      const parsed = parseGS1(rawData);
-      const url = `${sheetURL}?gtin=${parsed.gtin}&skt=${parsed.skt}&lot=${parsed.lot}`;
-      fetch(url)
-        .then(res => resultElement.innerHTML += "<br>📤 Google Sheets'e gönderildi.")
-        .catch(err => resultElement.innerHTML += "<br>❌ Veri gönderilemedi.");
-    }
+          const url = `${scriptURL}?gtin=${gtin}&skt=${skt}&lot=${encodeURIComponent(lot)}`;
 
-    startButton.addEventListener("click", () => {
-      if (scanning) return;
-      resultElement.innerHTML = "🎥 Kamera başlatılıyor...";
-      const codeReader = new ZXing.BrowserMultiFormatReader();
-
-      codeReader.decodeFromVideoDevice(null, videoElement, (result, err) => {
-        if (result) {
-          scanning = true;
-          const rawData = result.getText();
-          resultElement.innerHTML = "✅ Barkod:<br><b>" + rawData + "</b>";
-          videoElement.srcObject?.getTracks().forEach(track => track.stop());
-          codeReader.reset();
-          sendToSheet(rawData);
-        }
-      });
-    });
+          fetch(url)
+            .then(response => response.text())
+            .then(text => {
+              if (text === "OK") {
+                resultDiv.innerHTML += `<br><span class="success">✔️ Veri gönderildi.</span>`;
+              } else {
+                resultDiv.innerHTML += `<br><span class="error">❌ Veri gönderilemedi: ${text}</span>`;
+              }
+            })
+            .catch(err => {
+              resultDiv.innerHTML += `<br><span class="error">❌ Hata: ${err}</span>`;
+            });
+        })
+        .catch(err => {
+          resultDiv.innerHTML = `<span class="error">❌ Kamera açılamadı: ${err}</span>`;
+        });
+    };
   </script>
 </body>
 </html>
